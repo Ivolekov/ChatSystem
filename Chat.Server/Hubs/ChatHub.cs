@@ -46,7 +46,7 @@ namespace Chat.Server.Hubs
         public async Task SendMessage(Message message)
         {
             var connectionId = _connectionsUser.FirstOrDefault(x => x.Key == message.ReceiverName).Value;
-            await Clients.Client(connectionId).SendAsync("receiveMessage", message.Text);
+            await Clients.Client(connectionId).SendAsync("receiveMessage", message);
         }
 
         public async Task SendOnlineUsernames() 
