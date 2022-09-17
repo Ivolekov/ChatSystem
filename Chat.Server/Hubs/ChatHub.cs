@@ -1,67 +1,58 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using Chat.Server.Controllers;
+using Chat.Server.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace Chat.Server.Hubs
 {
-    public class ChatHub:Hub
+    public class ChatHub : Hub
     {
-        private readonly string _botUser;
-        private readonly IDictionary<string, UserConnection> _connections;
+        private readonly IDictionary<string, string> _connectionsUser;
 
-        public ChatHub(IDictionary<string, UserConnection> connections)
+        public ChatHub(IDictionary<string, string> connectionsUser)
         {
-            _botUser = "MyChat Bot";
-            _connections = connections;
+            _connectionsUser = connectionsUser;
         }
 
         public override Task OnDisconnectedAsync(Exception exception)
         {
-            if (_connections.TryGetValue(Context.ConnectionId, out UserConnection userConnection))
+            if (_connectionsUser.TryGetValue(Context.ConnectionId, out string username))
             {
-                _connections.Remove(Context.ConnectionId);
-                Clients.Group(userConnection.Room).SendAsync("ReceiveMessage", _botUser, $"{userConnection.User} has left");
-                SendUsersConnected(userConnection.Room);
+                _connectionsUser.Remove(username);
             }
-
+            
             return base.OnDisconnectedAsync(exception);
         }
-        public async Task JoinRoom(UserConnection userConnection)
+
+        public override Task OnConnectedAsync()
         {
-            if (string.IsNullOrEmpty(userConnection.Room))
-            {
-                userConnection.Room = "Main";
-            }
-
-            await Groups.AddToGroupAsync(Context.ConnectionId, userConnection.Room);
-
-            _connections[Context.ConnectionId] = userConnection;
-
-            await Clients.Group(userConnection.Room).SendAsync("ReceiveMessage", _botUser, $"{userConnection.User} has joined to the chat");
-
-            await SendUsersConnected(userConnection.Room);
+            return base.OnConnectedAsync();
         }
-        public async Task SendConnectionId(string connectionId)
+
+        public async Task AddUserToChatSystem(string connectionId, string username) 
         {
-            await Clients.All.SendAsync("setClientMessage", "A connection with ID '" + connectionId + "' has just connected");
-        }
-        public async Task SendMessage(string message)
-        {
-            if (_connections.TryGetValue(Context.ConnectionId, out UserConnection userConnection))
+            if (!string.IsNullOrEmpty(username))
             {
-                //await Clients.Group(userConnection.Room).SendAsync("ReceiveMessage", userConnection.User, message);
-                await Clients.All.SendAsync("ReceiveMessage", userConnection.User, message);
+                _connectionsUser[username] = connectionId;
             }
         }
-        public Task SendUsersConnected(string room)
-        {
-            var users = _connections.Values
-                .Where(c => c.Room == room)
-                .Select(c => c.User);
 
-            return Clients.Group(room).SendAsync("UsersInRoom", users);
+        public async Task SendMessage(Message message)
+        {
+            var connectionId = _connectionsUser.FirstOrDefault(x => x.Key == message.ReceiverName).Value;
+            await Clients.Client(connectionId).SendAsync("receiveMessage", message.Text);
+        }
+
+        public async Task SendOnlineUsernames() 
+        {
+            var usernamesList = _connectionsUser.Keys.ToList();
+            await Clients.All.SendAsync("receiveOnlineUsernames", _connectionsUser);
         }
     }
 }
